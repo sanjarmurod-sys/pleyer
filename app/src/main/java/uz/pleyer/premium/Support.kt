@@ -24,6 +24,22 @@ object Store {
     var minSec: Int
         get() = sp.getInt("min", 30)
         set(v) { sp.edit().putInt("min", v).apply() }
+
+    var hiddenPaths: Set<String>
+        get() = sp.getStringSet("hidden_paths", emptySet())?.toSet() ?: emptySet()
+        set(value) { sp.edit().putStringSet("hidden_paths", value.map { normalizeHiddenPath(it) }.filter { it.isNotBlank() }.toSet()).apply() }
+
+    fun addHiddenPath(path: String) {
+        val clean = normalizeHiddenPath(path)
+        if (clean.isNotBlank()) hiddenPaths = hiddenPaths + clean
+    }
+
+    fun removeHiddenPath(path: String) {
+        hiddenPaths = hiddenPaths - normalizeHiddenPath(path)
+    }
+
+    private fun normalizeHiddenPath(path: String): String =
+        path.trim().replace('\\\\', '/').trim('/').lowercase(java.util.Locale.ROOT)
     fun playlists(): Map<String, List<Long>> {
         val o = JSONObject(sp.getString("pl", "{}")!!)
         return o.keys().asSequence().associateWith { k ->
