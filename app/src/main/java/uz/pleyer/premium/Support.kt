@@ -22,8 +22,15 @@ object Store {
         get() = sp.getStringSet("favs", emptySet())!!.map { it.toLong() }.toSet()
         set(v) { sp.edit().putStringSet("favs", v.map { it.toString() }.toSet()).apply() }
     var minSec: Int
-        get() = sp.getInt("min", 30)
+        get() = sp.getInt("min", 0)
         set(v) { sp.edit().putInt("min", v).apply() }
+
+    var customUris: Set<String>
+        get() = sp.getStringSet("custom_audio_uris", emptySet())?.toSet() ?: emptySet()
+        set(value) { sp.edit().putStringSet("custom_audio_uris", value.toSet()).apply() }
+
+    fun addCustomUri(uri: String) { customUris = customUris + uri }
+    fun removeCustomUri(uri: String) { customUris = customUris - uri }
 
     var hiddenPaths: Set<String>
         get() = sp.getStringSet("hidden_paths", emptySet())?.toSet() ?: emptySet()
