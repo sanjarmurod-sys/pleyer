@@ -5,57 +5,128 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import java.util.Locale
 
-data class Track(val id: Long, val title: String, val artist: String, val album: String,
-                 val albumId: Long, val dur: Long, val path: String, val added: Long) {
-    val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+data class Track(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumId: Long,
+    val dur: Long,
+    val path: String,
+    val added: Long,
+    val displayName: String = "",
+    val mime: String = "",
+    val customUri: Uri? = null
+) {
+    val uri: Uri get() = customUri ?: ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
     val art: Uri get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
 }
 
 object Library {
     var hidden = 0
 
-    // Qo'ng'iroq yozuvlari odatda shu nomli papkalarda saqlanadi
-    private val badDirs = setOf("call", "calls", "call recordings", "call recording", "callrecordings",
-        "callrecorder", "call_recordings", "call_recording", "recordings", "recording", "recorder",
-        "voice recorder", "voicerecorder", "sound recorder", "soundrecorder", "sound_recorder",
-        "voice notes", "voicenotes", "whatsapp voice notes", "dictaphone", "callrec", "phonerecord",
-        "phone record", "phone records", "диктофон", "звонки", "записи", "запись звонков",
-        "запись разговоров", "разговоры", "записи разговоров")
+    // Hot 60 Pro+ / XOS uchun boshlang'ich istisno. Qo'shimcha papkalarni foydalanuvchi tanlaydi.
+    private val defaultHiddenPaths = setOf(
+        "music/phonerecord",
+        "music/phone record",
+        "music/phone records",
+        "recordings/call",
+        "recordings/call recordings"
+    )
 
-    // Fayl nomi bo'yicha: Call_..., +99890..., uzun raqamlar, sana_vaqt shablonlari
-    private val badName = Regex("(^(call[ _-]?rec|call recording|callrecord|recording[ _-]?\\d|record[ _-]?\\d|rec[ _-]?\\d|new recording|ptt-|aud-\\d|voice[ _-]?\\d|vn[ _-]?\\d|звонок|запись))|\\+\\d{7,}|\\d{9,}|\\d{8}[_-]\\d{6}")
+    // Faqat qo'ng'iroq yozuviga xos papka nomlari. Umumiy "recordings"/"recorder" papkasi bloklanmaydi.
+    private val callFolderNames = setOf(
+        "call", "calls", "call recording", "call recordings", "call_recording", "call_recordings",
+        "callrecord", "callrecords", "callrecorder", "callrecording", "callrecordings",
+        "phonerecord", "phone record", "phone records", "phone_record", "phone_recording",
+        "call_rec", "call_recorder", "call recordings", "запись звонков", "записи звонков",
+        "запись разговоров", "записи разговоров", "звонки"
+    )
 
-    // Ovozli qo'ng'iroq kodeklari (musiqa emas)
-    private val badMime = listOf("amr", "3gpp", "3gp", "awb")
+    // Fayl nomi bo'yicha faqat aniq qo'ng'iroq yozuvi belgilari taniladi.
+    // Uzun raqamlar yoki AMR/3GP/AWB MIME turi yolg'iz o'zi faylni yashirmaydi.
+    private val callName = Regex(
+        "(^|[ ._-])(call[ ._-]?(record|recording|rec)|phone[ ._-]?(record|recording)|phonerecord)([ ._-]|$)",
+        RegexOption.IGNORE_CASE
+    )
 
-    fun isCall(path: String, mime: String): Boolean {
-        val segs = path.lowercase().split('/')
-        if (segs.dropLast(1).any { it in badDirs }) return true
-        val name = segs.last().substringBeforeLast('.')
-        if (badName.containsMatchIn(name)) return true
-        val m = mime.lowercase()
-        return badMime.any { m.contains(it) }
+    fun isCall(relativePath: String, displayName: String, customHidden: Set<String> = Store.hiddenPaths): Boolean {
+        val normalized = normalize(relativePath)
+        val hiddenPaths = defaultHiddenPaths + customHidden.map(::normalize)
+        if (hiddenPaths.any { it.isNotBlank() && (normalized == it || normalized.startsWith("$it/")) }) return true
+
+        val segments = normalized.split('/').filter { it.isNotBlank() }
+        if (segments.any { it in callFolderNames }) return true
+
+        val fileStem = displayName.substringBeforeLast('.', displayName).lowercase(Locale.ROOT)
+        return callName.containsMatchIn(fileStem)
     }
 
     fun load(c: Context, minSec: Int): List<Track> {
         hidden = 0
         val out = ArrayList<Track>()
-        val a = MediaStore.Audio.Media.IS_RINGTONE
-        val sel = StringBuilder("$a=0 AND ${MediaStore.Audio.Media.IS_NOTIFICATION}=0 AND ${MediaStore.Audio.Media.IS_ALARM}=0")
-        if (Build.VERSION.SDK_INT >= 31) sel.append(" AND ${MediaStore.Audio.Media.IS_RECORDING}=0")
         val m = MediaStore.Audio.Media
-        val cols = arrayOf(m._ID, m.TITLE, m.ARTIST, m.ALBUM, m.ALBUM_ID, m.DURATION, m.DATA, m.DATE_ADDED, m.MIME_TYPE)
-        c.contentResolver.query(m.EXTERNAL_CONTENT_URI, cols, sel.toString(), null, "${m.TITLE} COLLATE NOCASE")?.use { q ->
+        val selection = StringBuilder(
+            "${m.IS_RINGTONE}=0 AND ${m.IS_NOTIFICATION}=0 AND ${m.IS_ALARM}=0"
+        )
+        if (Build.VERSION.SDK_INT >= 31) selection.append(" AND ${m.IS_RECORDING}=0")
+
+        val columns = mutableListOf(
+            m._ID, m.TITLE, m.ARTIST, m.ALBUM, m.ALBUM_ID,
+            m.DURATION, m.DATE_ADDED, m.MIME_TYPE, m.DISPLAY_NAME
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            columns.add(MediaStore.MediaColumns.RELATIVE_PATH)
+        }
+
+        c.contentResolver.query(
+            m.EXTERNAL_CONTENT_URI,
+            columns.toTypedArray(),
+            selection.toString(),
+            null,
+            "${m.TITLE} COLLATE NOCASE ASC"
+        )?.use { q ->
+            val idCol = q.getColumnIndexOrThrow(m._ID)
+            val titleCol = q.getColumnIndexOrThrow(m.TITLE)
+            val artistCol = q.getColumnIndexOrThrow(m.ARTIST)
+            val albumCol = q.getColumnIndexOrThrow(m.ALBUM)
+            val albumIdCol = q.getColumnIndexOrThrow(m.ALBUM_ID)
+            val durationCol = q.getColumnIndexOrThrow(m.DURATION)
+            val addedCol = q.getColumnIndexOrThrow(m.DATE_ADDED)
+            val mimeCol = q.getColumnIndex(m.MIME_TYPE)
+            val nameCol = q.getColumnIndex(m.DISPLAY_NAME)
+            val pathCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                q.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+            } else -1
+
             while (q.moveToNext()) {
-                val path = q.getString(6) ?: ""
-                val mime = q.getString(8) ?: ""
-                val dur = q.getLong(5)
-                if (dur < minSec * 1000L || isCall(path, mime)) { hidden++; continue }
-                val ar = q.getString(2)
-                out.add(Track(q.getLong(0), q.getString(1) ?: "?",
-                    if (ar == null || ar == "<unknown>") "Noma'lum ijrochi" else ar,
-                    q.getString(3) ?: "", q.getLong(4), dur, path, q.getLong(7)))
+                val path = if (pathCol >= 0) q.getString(pathCol).orEmpty() else ""
+                val name = if (nameCol >= 0) q.getString(nameCol).orEmpty() else ""
+                val mime = if (mimeCol >= 0) q.getString(mimeCol).orEmpty() else ""
+                val duration = q.getLong(durationCol)
+
+                if (duration < minSec * 1000L || isCall(path, name)) {
+                    hidden++
+                    continue
+                }
+
+                val artist = q.getString(artistCol)
+                out.add(
+                    Track(
+                        id = q.getLong(idCol),
+                        title = q.getString(titleCol)?.takeIf { it.isNotBlank() } ?: name.substringBeforeLast('.', name),
+                        artist = if (artist.isNullOrBlank() || artist == "<unknown>") "Noma'lum ijrochi" else artist,
+                        album = q.getString(albumCol).orEmpty(),
+                        albumId = q.getLong(albumIdCol),
+                        dur = duration,
+                        path = path,
+                        added = q.getLong(addedCol),
+                        displayName = name,
+                        mime = mime
+                    )
+                )
             }
         }
         return out
