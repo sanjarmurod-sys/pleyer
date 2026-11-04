@@ -244,6 +244,9 @@ class MainActivity : ComponentActivity() {
                         DropdownMenuItem({ Text("Keyin ijro etish") }, { ctl?.let { it.addMediaItem(it.currentMediaItemIndex + 1, item(t)) }; m = false })
                         DropdownMenuItem({ Text("Pleylistga qo'shish") }, { sub = true })
                         DropdownMenuItem({ Text("Matnni tahrirlash") }, { edit = true; m = false })
+                        if (t.isFromPicker) DropdownMenuItem({ Text("Kutubxonadan olib tashlash") }, {
+                            Store.removeCustomUri(t.uri.toString()); scan(); m = false
+                        })
                         if (pl != null && pl != FAV) DropdownMenuItem({ Text("Pleylistdan olib tashlash") }, {
                             pls = pls + (pl to pls[pl].orEmpty().filter { it != t.id }); Store.savePl(pls); m = false
                         })
