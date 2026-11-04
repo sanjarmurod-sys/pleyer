@@ -146,21 +146,25 @@ object Library {
             }
             if (isCall("", name)) return null
 
+            var title = name.substringBeforeLast('.', name)
+            var artist = "Noma'lum ijrochi"
+            var album = "Tanlangan fayl"
+            var duration = 0L
+
+            // Metadata Retriever is optional: a codec may be playable even when tags are unreadable.
             val retriever = MediaMetadataRetriever()
-            val title: String
-            val artist: String
-            val album: String
-            val duration: Long
             try {
-                retriever.setDataSource(context, uri)
-                title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                    ?: name.substringBeforeLast('.', name)
-                artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Noma'lum ijrochi"
-                album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Tanlangan fayl"
-                duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                runCatching {
+                    retriever.setDataSource(context, uri)
+                    title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: title
+                    artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: artist
+                    album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: album
+                    duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                }
             } finally {
                 runCatching { retriever.release() }
             }
+
             Track(
                 id = uri.toString().hashCode().toLong(),
                 title = title,
