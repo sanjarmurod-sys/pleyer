@@ -20,7 +20,8 @@ data class Track(
     val added: Long,
     val displayName: String = "",
     val mime: String = "",
-    val customUri: Uri? = null
+    val customUri: Uri? = null,
+    val isFromPicker: Boolean = false
 ) {
     val uri: Uri get() = customUri ?: ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
     val art: Uri get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
@@ -171,7 +172,8 @@ object Library {
                 added = System.currentTimeMillis() / 1000L,
                 displayName = name,
                 mime = context.contentResolver.getType(uri).orEmpty(),
-                customUri = uri
+                customUri = uri,
+                isFromPicker = true
             )
         }.getOrNull()
     }
