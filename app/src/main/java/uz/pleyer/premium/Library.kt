@@ -27,7 +27,7 @@ data class Track(
 object Library {
     var hidden = 0
 
-    // Hot 60 Pro+ / XOS uchun boshlang'ich istisno. Qo'shimcha papkalarni foydalanuvchi tanlaydi.
+    // Infinix HOT 60 Pro+ uchun boshlang'ich qo'ng'iroq yozuvlari papkalari.
     private val defaultHiddenPaths = setOf(
         "music/phonerecord",
         "music/phone record",
@@ -36,17 +36,15 @@ object Library {
         "recordings/call recordings"
     )
 
-    // Faqat qo'ng'iroq yozuviga xos papka nomlari. Umumiy "recordings"/"recorder" papkasi bloklanmaydi.
+    // Umumiy "Recordings" papkasini yashirmaymiz: u yerda foydalanuvchi yozgan ovozlar ham bo'lishi mumkin.
     private val callFolderNames = setOf(
         "call", "calls", "call recording", "call recordings", "call_recording", "call_recordings",
         "callrecord", "callrecords", "callrecorder", "callrecording", "callrecordings",
         "phonerecord", "phone record", "phone records", "phone_record", "phone_recording",
-        "call_rec", "call_recorder", "call recordings", "запись звонков", "записи звонков",
+        "call_rec", "call_recorder", "запись звонков", "записи звонков",
         "запись разговоров", "записи разговоров", "звонки"
     )
 
-    // Fayl nomi bo'yicha faqat aniq qo'ng'iroq yozuvi belgilari taniladi.
-    // Uzun raqamlar yoki AMR/3GP/AWB MIME turi yolg'iz o'zi faylni yashirmaydi.
     private val callName = Regex(
         "(^|[ ._-])(call[ ._-]?(record|recording|rec)|phone[ ._-]?(record|recording)|phonerecord)([ ._-]|$)",
         RegexOption.IGNORE_CASE
@@ -54,76 +52,89 @@ object Library {
 
     fun isCall(relativePath: String, displayName: String, customHidden: Set<String> = Store.hiddenPaths): Boolean {
         val normalized = normalize(relativePath)
-        val hiddenPaths = defaultHiddenPaths + customHidden.map(::normalize)
-        if (hiddenPaths.any { it.isNotBlank() && (normalized == it || normalized.startsWith("$it/")) }) return true
-
+        val hiddenPaths = defaultHiddenPaths + customHidden.map { normalize(it) }
+        if (hiddenPaths.any { hidden -> hidden.isNotBlank() && (normalized == hidden || normalized.startsWith("$hidden/")) }) {
+            return true
+        }
         val segments = normalized.split('/').filter { it.isNotBlank() }
         if (segments.any { it in callFolderNames }) return true
-
         val fileStem = displayName.substringBeforeLast('.', displayName).lowercase(Locale.ROOT)
         return callName.containsMatchIn(fileStem)
     }
 
-    fun load(c: Context, minSec: Int): List<Track> {
+    fun load(context: Context, minSec: Int): List<Track> {
         hidden = 0
         val out = ArrayList<Track>()
-        val m = MediaStore.Audio.Media
         val selection = StringBuilder(
-            "${m.IS_RINGTONE}=0 AND ${m.IS_NOTIFICATION}=0 AND ${m.IS_ALARM}=0"
+            "${MediaStore.Audio.Media.IS_RINGTONE}=0 AND " +
+                "${MediaStore.Audio.Media.IS_NOTIFICATION}=0 AND " +
+                "${MediaStore.Audio.Media.IS_ALARM}=0"
         )
-        if (Build.VERSION.SDK_INT >= 31) selection.append(" AND ${m.IS_RECORDING}=0")
+        if (Build.VERSION.SDK_INT >= 31) {
+            selection.append(" AND ${MediaStore.Audio.Media.IS_RECORDING}=0")
+        }
 
         val columns = mutableListOf(
-            m._ID, m.TITLE, m.ARTIST, m.ALBUM, m.ALBUM_ID,
-            m.DURATION, m.DATE_ADDED, m.MIME_TYPE, m.DISPLAY_NAME
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.MIME_TYPE,
+            MediaStore.Audio.Media.DISPLAY_NAME
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             columns.add(MediaStore.MediaColumns.RELATIVE_PATH)
         }
 
-        c.contentResolver.query(
-            m.EXTERNAL_CONTENT_URI,
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             columns.toTypedArray(),
             selection.toString(),
             null,
-            "${m.TITLE} COLLATE NOCASE ASC"
-        )?.use { q ->
-            val idCol = q.getColumnIndexOrThrow(m._ID)
-            val titleCol = q.getColumnIndexOrThrow(m.TITLE)
-            val artistCol = q.getColumnIndexOrThrow(m.ARTIST)
-            val albumCol = q.getColumnIndexOrThrow(m.ALBUM)
-            val albumIdCol = q.getColumnIndexOrThrow(m.ALBUM_ID)
-            val durationCol = q.getColumnIndexOrThrow(m.DURATION)
-            val addedCol = q.getColumnIndexOrThrow(m.DATE_ADDED)
-            val mimeCol = q.getColumnIndex(m.MIME_TYPE)
-            val nameCol = q.getColumnIndex(m.DISPLAY_NAME)
+            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+            val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val addedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val mimeCol = cursor.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE)
+            val nameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
             val pathCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                q.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
             } else -1
 
-            while (q.moveToNext()) {
-                val path = if (pathCol >= 0) q.getString(pathCol).orEmpty() else ""
-                val name = if (nameCol >= 0) q.getString(nameCol).orEmpty() else ""
-                val mime = if (mimeCol >= 0) q.getString(mimeCol).orEmpty() else ""
-                val duration = q.getLong(durationCol)
+            while (cursor.moveToNext()) {
+                val relativePath = if (pathCol >= 0) cursor.getString(pathCol).orEmpty() else ""
+                val displayName = if (nameCol >= 0) cursor.getString(nameCol).orEmpty() else ""
+                val mime = if (mimeCol >= 0) cursor.getString(mimeCol).orEmpty() else ""
+                val duration = cursor.getLong(durationCol)
 
-                if (duration < minSec * 1000L || isCall(path, name)) {
+                // MIME/format is intentionally not a filter: AMR, 3GP, AWB, MP3, WAV, etc.
+                // are excluded only when their folder/name identifies a call recording.
+                if (duration < minSec * 1000L || isCall(relativePath, displayName)) {
                     hidden++
                     continue
                 }
 
-                val artist = q.getString(artistCol)
+                val artist = cursor.getString(artistCol)
                 out.add(
                     Track(
-                        id = q.getLong(idCol),
-                        title = q.getString(titleCol)?.takeIf { it.isNotBlank() } ?: name.substringBeforeLast('.', name),
+                        id = cursor.getLong(idCol),
+                        title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
+                            ?: displayName.substringBeforeLast('.', displayName),
                         artist = if (artist.isNullOrBlank() || artist == "<unknown>") "Noma'lum ijrochi" else artist,
-                        album = q.getString(albumCol).orEmpty(),
-                        albumId = q.getLong(albumIdCol),
+                        album = cursor.getString(albumCol).orEmpty(),
+                        albumId = cursor.getLong(albumIdCol),
                         dur = duration,
-                        path = path,
-                        added = q.getLong(addedCol),
-                        displayName = name,
+                        path = relativePath,
+                        added = cursor.getLong(addedCol),
+                        displayName = displayName,
                         mime = mime
                     )
                 )
@@ -131,4 +142,7 @@ object Library {
         }
         return out
     }
+
+    private fun normalize(path: String): String =
+        path.trim().replace('\\\\', '/').trim('/').lowercase(Locale.ROOT)
 }
