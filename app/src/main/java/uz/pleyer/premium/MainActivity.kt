@@ -1,0 +1,471 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package uz.pleyer.premium
+
+import android.Manifest
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import android.util.Size
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.*
+import androidx.core.content.ContextCompat
+import androidx.media3.common.*
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import kotlinx.coroutines.*
+
+val Ink = Color(0xFF0B0B0F)
+val Ink2 = Color(0xFF16161D)
+val Gold = Color(0xFFD8B878)
+val Cream = Color(0xFFF1EBDD)
+val Mute = Color(0xFF8E8A82)
+const val FAV = "Sevimlilar"
+
+fun fmt(ms: Long): String = "%d:%02d".format(ms / 60000, ms / 1000 % 60)
+
+@Composable
+fun Art(t: Track?, size: Dp, px: Int, round: Dp = 10.dp) {
+    val c = LocalContext.current
+    val bmp by produceState<Bitmap?>(null, t?.id) {
+        value = t?.let {
+            withContext(Dispatchers.IO) { try { c.contentResolver.loadThumbnail(it.uri, Size(px, px), null) } catch (e: Exception) { null } }
+        }
+    }
+    val b = bmp
+    Box(Modifier.size(size).clip(RoundedCornerShape(round)).background(Ink2), contentAlignment = Alignment.Center) {
+        if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Icon(Icons.Rounded.MusicNote, null, tint = Gold.copy(alpha = 0.5f))
+    }
+}
+
+class MainActivity : ComponentActivity() {
+    private var ctl by mutableStateOf<MediaController?>(null)
+    private var tracks by mutableStateOf<List<Track>>(emptyList())
+    private var ready by mutableStateOf(false)
+    private var curId by mutableStateOf<Long?>(null)
+    private var playing by mutableStateOf(false)
+    private var shuffle by mutableStateOf(false)
+    private var rep by mutableIntStateOf(0)
+    private var favs by mutableStateOf<Set<Long>>(emptySet())
+    private var pls by mutableStateOf<Map<String, List<Long>>>(emptyMap())
+    private lateinit var rq: ActivityResultLauncher<Array<String>>
+    private lateinit var perm: Array<String>
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        Store.init(this); favs = Store.favs; pls = Store.playlists()
+        perm = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+        else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        rq = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { scan() }
+        scan()
+        val need = perm.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (need.isNotEmpty()) rq.launch(need.toTypedArray())
+        connect()
+        setContent { App() }
+    }
+
+    private fun scan() {
+        if (checkSelfPermission(perm[0]) != PackageManager.PERMISSION_GRANTED) return
+        ready = true
+        Thread { val l = Library.load(this, Store.minSec); runOnUiThread { tracks = l } }.start()
+    }
+
+    private fun sync(c: Player) { curId = c.currentMediaItem?.mediaId?.toLongOrNull(); playing = c.isPlaying; shuffle = c.shuffleModeEnabled; rep = c.repeatMode }
+
+    private fun connect() {
+        val f = MediaController.Builder(this, SessionToken(this, ComponentName(this, PlayerService::class.java))).buildAsync()
+        f.addListener({
+            try {
+                val c = f.get(); ctl = c; sync(c)
+                c.addListener(object : Player.Listener { override fun onEvents(p: Player, e: Player.Events) { sync(c) } })
+            } catch (e: Exception) { }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun item(t: Track) = MediaItem.Builder().setMediaId(t.id.toString()).setUri(t.uri)
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist).setAlbumTitle(t.album).setArtworkUri(t.art).build()).build()
+
+    private fun play(l: List<Track>, i: Int) { ctl?.run { setMediaItems(l.map { item(it) }, i, 0L); prepare(); play() } }
+
+    @Composable
+    fun App() {
+        MaterialTheme(colorScheme = darkColorScheme(primary = Gold, onPrimary = Ink, secondary = Gold, background = Ink, surface = Ink2,
+            onBackground = Cream, onSurface = Cream, surfaceVariant = Ink2, onSurfaceVariant = Mute)) {
+            var tab by remember { mutableIntStateOf(0) }
+            var full by remember { mutableStateOf(false) }
+            val cur = tracks.find { it.id == curId }
+            Box(Modifier.fillMaxSize().background(Ink)) {
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) {
+                        when {
+                            !ready -> Perm()
+                            tab == 0 -> Songs()
+                            tab == 1 -> Groups()
+                            tab == 2 -> Lists()
+                            else -> Tools()
+                        }
+                    }
+                    if (cur != null) Mini(cur) { full = true }
+                    NavigationBar(containerColor = Ink2) {
+                        listOf("Qo'shiqlar" to Icons.Rounded.MusicNote, "Albom" to Icons.Rounded.Album,
+                            "Pleylist" to Icons.Rounded.QueueMusic, "Asboblar" to Icons.Rounded.Tune).forEachIndexed { i, p ->
+                            NavigationBarItem(tab == i, { tab = i }, { Icon(p.second, null) }, label = { Text(p.first, fontSize = 11.sp) },
+                                colors = NavigationBarItemDefaults.colors(selectedIconColor = Ink, selectedTextColor = Gold,
+                                    indicatorColor = Gold, unselectedIconColor = Mute, unselectedTextColor = Mute))
+                        }
+                    }
+                }
+                if (full && cur != null) Full(cur) { full = false }
+            }
+        }
+    }
+
+    @Composable
+    fun Perm() {
+        Column(Modifier.fillMaxSize().padding(32.dp), Arrangement.Center, Alignment.CenterHorizontally) {
+            Text("Premium Pleyer", fontFamily = FontFamily.Serif, fontSize = 30.sp, color = Gold)
+            Spacer(Modifier.height(12.dp))
+            Text("Musiqalaringizni ko'rsatish uchun audio fayllarga ruxsat kerak.", color = Cream, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(20.dp))
+            Button({ rq.launch(perm) }) { Text("Ruxsat berish") }
+        }
+    }
+
+    @Composable
+    fun Header(t: String, s: String, back: (() -> Unit)? = null) {
+        Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp, 16.dp, 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (back != null) IconButton(back) { Icon(Icons.Rounded.ArrowBack, null, tint = Cream) }
+            Column {
+                Text(t, fontFamily = FontFamily.Serif, fontSize = 28.sp, color = Cream, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(s, color = Mute, fontSize = 13.sp)
+            }
+        }
+    }
+
+    @Composable
+    fun PlayBar(l: List<Track>) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button({ if (l.isNotEmpty()) { ctl?.shuffleModeEnabled = false; play(l, 0) } }) { Text("Ijro etish") }
+            OutlinedButton({ if (l.isNotEmpty()) { ctl?.shuffleModeEnabled = true; play(l, l.indices.random()) } }) { Text("Aralash", color = Gold) }
+        }
+    }
+
+    @Composable
+    fun TrackList(l: List<Track>, pl: String?) {
+        LazyColumn(Modifier.fillMaxSize()) { itemsIndexed(l) { i, t -> TrackRow(t, l, i, pl) } }
+    }
+
+    @Composable
+    fun TrackRow(t: Track, l: List<Track>, i: Int, pl: String?) {
+        var m by remember { mutableStateOf(false) }
+        var sub by remember { mutableStateOf(false) }
+        var edit by remember { mutableStateOf(false) }
+        val on = t.id == curId
+        val fav = t.id in favs
+        Row(Modifier.fillMaxWidth().clickable { play(l, i) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Art(t, 48.dp, 128)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.title, color = if (on) Gold else Cream, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                Text(t.artist + " • " + fmt(t.dur), color = Mute, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton({ favs = if (fav) favs - t.id else favs + t.id; Store.favs = favs }) {
+                Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (fav) Gold else Mute)
+            }
+            Box {
+                IconButton({ m = true }) { Icon(Icons.Rounded.MoreVert, null, tint = Mute) }
+                DropdownMenu(m, { m = false; sub = false }) {
+                    if (!sub) {
+                        DropdownMenuItem({ Text("Keyin ijro etish") }, { ctl?.let { it.addMediaItem(it.currentMediaItemIndex + 1, item(t)) }; m = false })
+                        DropdownMenuItem({ Text("Pleylistga qo'shish") }, { sub = true })
+                        DropdownMenuItem({ Text("Matnni tahrirlash") }, { edit = true; m = false })
+                        if (pl != null && pl != FAV) DropdownMenuItem({ Text("Pleylistdan olib tashlash") }, {
+                            pls = pls + (pl to pls[pl].orEmpty().filter { it != t.id }); Store.savePl(pls); m = false
+                        })
+                    } else {
+                        pls.keys.forEach { n ->
+                            DropdownMenuItem({ Text(n) }, { pls = pls + (n to (pls[n].orEmpty() + t.id)); Store.savePl(pls); m = false; sub = false })
+                        }
+                        if (pls.isEmpty()) DropdownMenuItem({ Text("Avval pleylist yarating") }, { m = false; sub = false })
+                    }
+                }
+            }
+        }
+        if (edit) LyricDialog(t) { edit = false }
+    }
+
+    @Composable
+    fun Songs() {
+        var q by remember { mutableStateOf("") }
+        var sort by remember { mutableIntStateOf(0) }
+        val l = remember(tracks, q, sort) {
+            tracks.filter { q.isBlank() || (it.title + it.artist + it.album).contains(q, true) }.let {
+                when (sort) {
+                    1 -> it.sortedByDescending { x -> x.added }
+                    2 -> it.sortedBy { x -> x.artist.lowercase() }
+                    3 -> it.sortedByDescending { x -> x.dur }
+                    else -> it
+                }
+            }
+        }
+        Column {
+            Header("Mediateka", "${l.size} ta trek")
+            OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text("Qidirish") },
+                singleLine = true, leadingIcon = { Icon(Icons.Rounded.Search, null) })
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("A–Z", "Yangi", "Ijrochi", "Davomiylik").forEachIndexed { i, s -> FilterChip(sort == i, { sort = i }, { Text(s) }) }
+            }
+            PlayBar(l)
+            TrackList(l, null)
+        }
+    }
+
+    @Composable
+    fun Groups() {
+        var byAlbum by remember { mutableStateOf(true) }
+        var sel by remember { mutableStateOf<String?>(null) }
+        val g = remember(tracks, byAlbum) {
+            tracks.groupBy { if (byAlbum) it.album.ifBlank { "Noma'lum albom" } else it.artist }.toList().sortedBy { it.first.lowercase() }
+        }
+        BackHandler(sel != null) { sel = null }
+        if (sel != null) {
+            val n = sel!!
+            val l = g.firstOrNull { it.first == n }?.second.orEmpty()
+            Column { Header(n, "${l.size} ta trek") { sel = null }; PlayBar(l); TrackList(l, null) }
+        } else Column {
+            Header(if (byAlbum) "Albomlar" else "Ijrochilar", "${g.size} ta")
+            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(byAlbum, { byAlbum = true }, { Text("Albomlar") })
+                FilterChip(!byAlbum, { byAlbum = false }, { Text("Ijrochilar") })
+            }
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(g) { p ->
+                    Row(Modifier.fillMaxWidth().clickable { sel = p.first }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Art(p.second[0], 52.dp, 128)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(p.first, color = Cream, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${p.second.size} ta trek", color = Mute, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun Lists() {
+        var sel by remember { mutableStateOf<String?>(null) }
+        var dlg by remember { mutableStateOf(false) }
+        val byId = remember(tracks) { tracks.associateBy { it.id } }
+        fun of(n: String): List<Track> = if (n == FAV) tracks.filter { it.id in favs } else pls[n].orEmpty().mapNotNull { byId[it] }
+        BackHandler(sel != null) { sel = null }
+        if (sel != null) {
+            val n = sel!!
+            val l = of(n)
+            Column {
+                Header(n, "${l.size} ta trek") { sel = null }
+                PlayBar(l)
+                if (n != FAV) TextButton({ pls = pls - n; Store.savePl(pls); sel = null }) { Text("Pleylistni o'chirish", color = Mute) }
+                TrackList(l, n)
+            }
+        } else Column {
+            Header("Pleylistlar", "${pls.size + 1} ta")
+            Button({ dlg = true }, Modifier.padding(horizontal = 16.dp)) { Icon(Icons.Rounded.Add, null); Text(" Yangi pleylist") }
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(listOf(FAV) + pls.keys.toList()) { n ->
+                    Row(Modifier.fillMaxWidth().clickable { sel = n }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (n == FAV) Icons.Rounded.Favorite else Icons.Rounded.QueueMusic, null, tint = Gold)
+                        Spacer(Modifier.width(14.dp))
+                        Column { Text(n, color = Cream); Text("${of(n).size} ta trek", color = Mute, fontSize = 12.sp) }
+                    }
+                }
+            }
+        }
+        if (dlg) {
+            var s by remember { mutableStateOf("") }
+            AlertDialog({ dlg = false },
+                confirmButton = { TextButton({ val n = s.trim(); if (n.isNotEmpty() && n != FAV && n !in pls) { pls = pls + (n to emptyList()); Store.savePl(pls) }; dlg = false }) { Text("Yaratish") } },
+                dismissButton = { TextButton({ dlg = false }) { Text("Bekor") } },
+                title = { Text("Yangi pleylist") },
+                text = { OutlinedTextField(s, { s = it }, singleLine = true, placeholder = { Text("Nomi") }) })
+        }
+    }
+
+    @Composable
+    fun Sec(t: String) { Text(t, color = Gold, fontFamily = FontFamily.Serif, fontSize = 20.sp, modifier = Modifier.padding(top = 20.dp, bottom = 6.dp)) }
+
+    @Composable
+    fun Tools() {
+        var sp by remember { mutableFloatStateOf(1f) }
+        var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(Unit) { while (true) { delay(1000); now = System.currentTimeMillis() } }
+        val v = Fx.ver
+        val e = Fx.eq
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            Header("Asboblar", "Mediatekada ${tracks.size} ta trek, yashirilgan: ${Library.hidden}")
+            Sec("Ijro tezligi: " + "%.2f".format(sp) + "x")
+            Slider(sp, { sp = it; ctl?.setPlaybackSpeed(it) }, valueRange = 0.5f..2f)
+
+            Sec("Ekvalayzer")
+            if (e == null || v < 0) Text("Ekvalayzer uchun avval biror qo'shiqni ijro eting.", color = Mute)
+            else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Yoqish", color = Cream, modifier = Modifier.weight(1f))
+                    Switch(Fx.on, { Fx.on = it; Fx.apply() })
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (p in 0 until e.numberOfPresets) AssistChip({
+                        e.usePreset(p.toShort())
+                        for (b in 0 until e.numberOfBands) Fx.levels[b] = e.getBandLevel(b.toShort()).toInt()
+                        Fx.on = true; Fx.apply()
+                    }, { Text(e.getPresetName(p.toShort())) })
+                }
+                val r = e.bandLevelRange
+                for (b in 0 until e.numberOfBands) {
+                    val hz = e.getCenterFreq(b.toShort()) / 1000
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (hz >= 1000) "%.1f kHz".format(hz / 1000f) else "$hz Hz", color = Mute, fontSize = 12.sp, modifier = Modifier.width(64.dp))
+                        Slider(Fx.levels.getOrElse(b) { 0 }.toFloat(), { Fx.levels[b] = it.toInt(); Fx.apply() }, valueRange = r[0].toFloat()..r[1].toFloat())
+                    }
+                }
+            }
+
+            Sec("Bass kuchaytirgich")
+            Slider(Fx.bass / 1000f, { Fx.bass = (it * 1000).toInt(); Fx.apply() })
+
+            Sec("Uyqu taymeri")
+            if (Sleep.endAt > 0) Text("Qoldi: " + fmt(maxOf(0L, Sleep.endAt - now)), color = Gold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(15, 30, 45, 60, 90).forEach { m -> AssistChip({ Sleep.start(m) }, { Text("$m daq") }) }
+                AssistChip({ Sleep.cancel() }, { Text("O'chirish") })
+            }
+
+            Sec("Qisqa fayllarni yashirish")
+            Text("Shu davomiylikdan qisqa fayllar (rington, ovozli xabar) ro'yxatda ko'rinmaydi. Qo'ng'iroq yozuvlari esa papka va nom bo'yicha avtomatik chiqarib tashlanadi.", color = Mute, fontSize = 12.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0, 15, 30, 60).forEach { s ->
+                    FilterChip(Store.minSec == s, { Store.minSec = s; scan() }, { Text(if (s == 0) "Yo'q" else "$s soniya") })
+                }
+            }
+
+            Sec("Qo'shiq matni")
+            Text(".lrc yoki .txt fayl qo'shiq yonida (bir xil nomda) tursa, avtomatik o'qiladi. Buning uchun «Barcha fayllarga ruxsat» kerak.", color = Mute, fontSize = 12.sp)
+            TextButton({ try { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))) } catch (x: Exception) { } }) {
+                Text("Ruxsat sozlamasini ochish", color = Gold)
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    @Composable
+    fun Mini(t: Track, open: () -> Unit) {
+        Row(Modifier.fillMaxWidth().background(Ink2).clickable { open() }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Art(t, 44.dp, 128)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.title, color = Cream, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.artist, color = Mute, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton({ ctl?.seekToPrevious() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Cream) }
+            IconButton({ if (playing) ctl?.pause() else ctl?.play() }) { Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Gold, modifier = Modifier.size(32.dp)) }
+            IconButton({ ctl?.seekToNext() }) { Icon(Icons.Rounded.SkipNext, null, tint = Cream) }
+        }
+    }
+
+    @Composable
+    fun Full(t: Track, close: () -> Unit) {
+        BackHandler { close() }
+        var pos by remember { mutableLongStateOf(0L) }
+        var ly by remember { mutableStateOf(false) }
+        LaunchedEffect(t.id) { while (true) { pos = ctl?.currentPosition ?: 0L; delay(250) } }
+        val lines = remember(t.id, ly) { Lyrics.load(t) }
+        val d = (ctl?.duration ?: 0L).coerceAtLeast(1L)
+        val fav = t.id in favs
+        Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF2A2214), Ink))).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                IconButton(close) { Icon(Icons.Rounded.ExpandMore, null, tint = Cream) }
+                Text("Hozir ijroda", color = Mute)
+                TextButton({ ly = !ly }) { Text(if (ly) "Rasm" else "Matn", color = Gold) }
+            }
+            if (!ly) {
+                Spacer(Modifier.weight(0.4f)); Art(t, 300.dp, 600, 24.dp); Spacer(Modifier.weight(0.6f))
+            } else LyricsView(lines, pos, Modifier.weight(1f).fillMaxWidth())
+            Text(t.title, fontFamily = FontFamily.Serif, fontSize = 24.sp, color = Cream, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+            Text(t.artist, color = Gold, maxLines = 1)
+            Slider(pos.toFloat().coerceAtMost(d.toFloat()), { pos = it.toLong(); ctl?.seekTo(it.toLong()) }, valueRange = 0f..d.toFloat())
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) { Text(fmt(pos), color = Mute, fontSize = 12.sp); Text(fmt(d), color = Mute, fontSize = 12.sp) }
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                IconButton({ ctl?.shuffleModeEnabled = !shuffle }) { Icon(Icons.Rounded.Shuffle, null, tint = if (shuffle) Gold else Mute) }
+                IconButton({ ctl?.seekToPrevious() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Cream, modifier = Modifier.size(36.dp)) }
+                Box(Modifier.size(68.dp).clip(CircleShape).background(Gold).clickable { if (playing) ctl?.pause() else ctl?.play() }, contentAlignment = Alignment.Center) {
+                    Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Ink, modifier = Modifier.size(40.dp))
+                }
+                IconButton({ ctl?.seekToNext() }) { Icon(Icons.Rounded.SkipNext, null, tint = Cream, modifier = Modifier.size(36.dp)) }
+                IconButton({ ctl?.repeatMode = when (rep) { 0 -> 2; 2 -> 1; else -> 0 } }) {
+                    Icon(if (rep == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null, tint = if (rep != 0) Gold else Mute)
+                }
+            }
+            IconButton({ favs = if (fav) favs - t.id else favs + t.id; Store.favs = favs }) {
+                Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (fav) Gold else Mute)
+            }
+        }
+    }
+
+    @Composable
+    fun LyricsView(l: List<Pair<Long, String>>, pos: Long, m: Modifier) {
+        if (l.isEmpty()) {
+            Box(m, Alignment.Center) {
+                Text("Matn topilmadi.\nTrek menyusidagi «Matnni tahrirlash» orqali qo'shing yoki .lrc fayl qo'ying.", color = Mute, textAlign = TextAlign.Center)
+            }
+            return
+        }
+        val st = rememberLazyListState()
+        val idx = if (l[0].first >= 0) l.indexOfLast { it.first <= pos }.coerceAtLeast(0) else -1
+        LaunchedEffect(idx) { if (idx >= 0) st.animateScrollToItem(maxOf(0, idx - 3)) }
+        LazyColumn(m, st, horizontalAlignment = Alignment.CenterHorizontally) {
+            itemsIndexed(l) { i, p ->
+                Text(p.second, color = if (i == idx) Gold else Cream.copy(alpha = 0.55f), fontSize = if (i == idx) 22.sp else 18.sp,
+                    textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 8.dp))
+            }
+        }
+    }
+
+    @Composable
+    fun LyricDialog(t: Track, done: () -> Unit) {
+        var s by remember { mutableStateOf(Store.lyric(t.id) ?: "") }
+        AlertDialog(done,
+            confirmButton = { TextButton({ Store.setLyric(t.id, s); done() }) { Text("Saqlash") } },
+            dismissButton = { TextButton(done) { Text("Bekor") } },
+            title = { Text(t.title, maxLines = 1) },
+            text = { OutlinedTextField(s, { s = it }, Modifier.fillMaxWidth().height(260.dp), placeholder = { Text("Matnni shu yerga qo'ying. Vaqtli matn ham mumkin: [00:12.50] satr") }) })
+    }
+}
