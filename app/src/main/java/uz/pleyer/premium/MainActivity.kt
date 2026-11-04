@@ -80,6 +80,17 @@ class MainActivity : ComponentActivity() {
     private lateinit var rq: ActivityResultLauncher<Array<String>>
     private lateinit var perm: Array<String>
 
+    private val audioPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            Store.addCustomUri(uri.toString())
+            scan()
+            Toast.makeText(this, "Audio fayl kutubxonaga qo'shildi", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             runCatching {
@@ -114,7 +125,14 @@ class MainActivity : ComponentActivity() {
     private fun scan() {
         if (checkSelfPermission(perm[0]) != PackageManager.PERMISSION_GRANTED) return
         ready = true
-        Thread { val l = Library.load(this, Store.minSec); runOnUiThread { tracks = l } }.start()
+        Thread {
+            val indexed = Library.load(this, Store.minSec)
+            val picked = Store.customUris.mapNotNull { raw ->
+                runCatching { Library.fromDocument(this, Uri.parse(raw)) }.getOrNull()
+            }
+            val merged = (indexed + picked).distinctBy { it.uri.toString() }
+            runOnUiThread { tracks = merged }
+        }.start()
     }
 
     private fun sync(c: Player) { curId = c.currentMediaItem?.mediaId?.toLongOrNull(); playing = c.isPlaying; shuffle = c.shuffleModeEnabled; rep = c.repeatMode }
@@ -394,6 +412,17 @@ class MainActivity : ComponentActivity() {
                 listOf(0, 15, 30, 60).forEach { s ->
                     FilterChip(Store.minSec == s, { Store.minSec = s; scan() }, { Text(if (s == 0) "Yo'q" else "$s soniya") })
                 }
+            }
+
+            Sec("Tashqi audio fayllar")
+            Text("Mediatekada ko'rinmagan MP3, FLAC, WAV, M4A yoki boshqa audio faylni tizim fayl tanlagichi orqali qo'shing.", color = Mute, fontSize = 12.sp)
+            Button(
+                onClick = { audioPicker.launch(arrayOf("audio/*")) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.AudioFile, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Audio fayl tanlash")
             }
 
             Sec("Qo'ng'iroq yozuvlari va istisno papkalar")
