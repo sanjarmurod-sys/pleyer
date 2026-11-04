@@ -39,7 +39,7 @@ object Store {
     }
 
     private fun normalizeHiddenPath(path: String): String =
-        path.trim().replace('\\\\', '/').trim('/').lowercase(java.util.Locale.ROOT)
+        path.trim().replace("\\", "/").trim('/').lowercase(java.util.Locale.ROOT)
     fun playlists(): Map<String, List<Long>> {
         val o = JSONObject(sp.getString("pl", "{}")!!)
         return o.keys().asSequence().associateWith { k ->
