@@ -101,16 +101,10 @@ object Sleep {
 }
 
 object Lyrics {
-    fun load(t: Track): List<Pair<Long, String>> {
-        val raw = Store.lyric(t.id) ?: sidecar(t.path) ?: return emptyList()
-        return parse(raw)
-    }
-    private fun sidecar(p: String): String? {
-        for (e in listOf("lrc", "txt")) {
-            try { val f = java.io.File(p.substringBeforeLast('.') + "." + e); if (f.canRead()) return f.readText() } catch (_: Exception) { }
-        }
-        return null
-    }
+    // Scoped storage does not grant arbitrary sibling-file reads. Lyrics are stored in-app
+    // or pasted in the editor, rather than asking for broad all-files access.
+    fun load(t: Track): List<Pair<Long, String>> =
+        Store.lyric(t.id)?.let(::parse) ?: emptyList()
     fun parse(raw: String): List<Pair<Long, String>> {
         val r = Regex("\\[(\\d+):(\\d+(?:\\.\\d+)?)\\]")
         val out = ArrayList<Pair<Long, String>>(); var timed = false
