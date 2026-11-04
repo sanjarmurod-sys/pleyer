@@ -10,8 +10,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.util.Size
+import android.provider.DocumentsContract
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -78,6 +79,24 @@ class MainActivity : ComponentActivity() {
     private var pls by mutableStateOf<Map<String, List<Long>>>(emptyMap())
     private lateinit var rq: ActivityResultLauncher<Array<String>>
     private lateinit var perm: Array<String>
+
+    private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val path = runCatching {
+                DocumentsContract.getTreeDocumentId(uri).substringAfter(':', "").trim('/')
+            }.getOrDefault("")
+            if (path.isNotBlank()) {
+                Store.addHiddenPath(path)
+                scan()
+                Toast.makeText(this, "Papka musiqalar ro'yxatidan chiqarildi", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Papka yo'lini aniqlab bo'lmadi", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -377,11 +396,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Sec("Qo'shiq matni")
-            Text(".lrc yoki .txt fayl qo'shiq yonida (bir xil nomda) tursa, avtomatik o'qiladi. Buning uchun «Barcha fayllarga ruxsat» kerak.", color = Mute, fontSize = 12.sp)
-            TextButton({ try { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))) } catch (x: Exception) { } }) {
-                Text("Ruxsat sozlamasini ochish", color = Gold)
+            Sec("Qo'ng'iroq yozuvlari va istisno papkalar")
+            Text("Infinix uchun Music/PhoneRecord boshlang'ich holatda yashiriladi. Qo'ng'iroq yozuvlari qaysi audio formatda bo'lishidan qat'i nazar, papka yoki aniq yozuv nomi orqali ajratiladi. Istalgan boshqa papkani ham tanlashingiz mumkin.", color = Mute, fontSize = 12.sp)
+            Button(
+                onClick = { folderPicker.launch(null) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.FolderOff, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Istisno papka tanlash")
             }
+            Store.hiddenPaths.sorted().forEach { folder ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(folder, color = Cream, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { Store.removeHiddenPath(folder); scan() }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Istisnoni olib tashlash", tint = Mute)
+                    }
+                }
+            }
+
+            Sec("Qo'shiq matni")
+            Text("Qo'shiq menyusidagi «Matnni tahrirlash» orqali matnni qo'lda kiritishingiz mumkin. Vaqt belgilari bilan yozilgan LRC matni ijro davomida sinxron ko'rsatiladi.", color = Mute, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
         }
     }
