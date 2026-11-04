@@ -144,5 +144,5 @@ object Library {
     }
 
     private fun normalize(path: String): String =
-        path.trim().replace('\\\\', '/').trim('/').lowercase(Locale.ROOT)
+        path.trim().replace("\\", "/").trim('/').lowercase(Locale.ROOT)
 }
