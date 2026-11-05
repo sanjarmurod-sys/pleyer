@@ -325,7 +325,7 @@ class MainActivity : ComponentActivity() {
         val l = remember(tracks, q, sort) {
             tracks.filter { q.isBlank() || (it.title + it.artist + it.album).contains(q, true) }.let {
                 when (sort) {
-                    1 -> it.sortedByDescending { x -> x.added }
+                    1 -> it.sortedBy { x -> x.title.lowercase() }
                     2 -> it.sortedBy { x -> x.artist.lowercase() }
                     3 -> it.sortedByDescending { x -> x.dur }
                     else -> it
@@ -337,7 +337,7 @@ class MainActivity : ComponentActivity() {
             OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text("Qidirish") },
                 singleLine = true, leadingIcon = { Icon(Icons.Rounded.Search, null) })
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("A–Z", "Yangi", "Ijrochi", "Davomiylik").forEachIndexed { i, s -> FilterChip(sort == i, { sort = i }, { Text(s) }) }
+                listOf("Yangi", "A–Z", "Ijrochi", "Davomiylik").forEachIndexed { i, s -> FilterChip(sort == i, { sort = i }, { Text(s) }) }
             }
             PlayBar(l)
             TrackList(l, null)
@@ -550,7 +550,7 @@ class MainActivity : ComponentActivity() {
         val lines = remember(t.id, ly) { Lyrics.load(t) }
         val d = (ctl?.duration ?: 0L).coerceAtLeast(1L)
         val fav = t.id in favs
-        Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF2A2214), Ink))).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink2, Ink))).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 IconButton(close) { Icon(Icons.Rounded.ExpandMore, null, tint = Cream) }
                 Text("Hozir ijroda", color = Mute)
