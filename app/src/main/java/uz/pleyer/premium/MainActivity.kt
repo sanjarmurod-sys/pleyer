@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
@@ -70,30 +71,68 @@ fun Art(t: Track?, size: Dp, px: Int, round: Dp = 10.dp) {
 
 @Composable
 fun AudioVisualizer(track: Track, playing: Boolean) {
-    val bars = AudioViz.levels
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+    val bars by AudioViz.levels.collectAsState()
+    val aqua = Store.theme == "aqua"
+    val accent2 = if (aqua) Color(0xFF36D9E8) else Color(0xFF9B5CFF)
+    val accent3 = if (aqua) Color(0xFF8AFFF1) else Color(0xFFFF4DB8)
+    val pulse = rememberInfiniteTransition(label = "playerPulse")
+    val breathe by pulse.animateFloat(0.94f, 1.035f,
+        infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
+    val rotation by pulse.animateFloat(0f, 360f,
+        infiniteRepeatable(tween(24000, easing = LinearEasing), RepeatMode.Restart), label = "orbit")
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
-                val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
-                val base = size.minDimension * 0.34f
-                drawCircle(color = Gold.copy(alpha = 0.14f), radius = base + 28.dp.toPx(), center = center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()))
-                bars.forEachIndexed { index, value ->
-                    val angle = (index * 360f / bars.size - 90f) * Math.PI.toFloat() / 180f
-                    val amp = if (playing) value else 0.04f
-                    val outer = base + 12.dp.toPx() + amp * 34.dp.toPx()
-                    val start = androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle) * (base + 7.dp.toPx()), center.y + kotlin.math.sin(angle) * (base + 7.dp.toPx()))
-                    val end = androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle) * outer, center.y + kotlin.math.sin(angle) * outer)
-                    drawLine(Gold.copy(alpha = 0.45f + amp * 0.55f), start, end, strokeWidth = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                val c = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                val min = size.minDimension
+                val base = min * 0.315f
+                drawCircle(Brush.radialGradient(listOf(accent2.copy(alpha = 0.18f), Color.Transparent), c, min * 0.49f), min * 0.49f, c)
+                drawCircle(accent2.copy(alpha = 0.22f), base + 24.dp.toPx(), c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                drawCircle(accent3.copy(alpha = 0.28f), base + 35.dp.toPx(), c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                drawArc(Brush.sweepGradient(listOf(Color.Transparent, accent2, accent3, Color.Transparent)),
+                    rotation, 112f, false,
+                    androidx.compose.ui.geometry.Offset(c.x - base - 29.dp.toPx(), c.y - base - 29.dp.toPx()),
+                    androidx.compose.ui.geometry.Size((base + 29.dp.toPx()) * 2, (base + 29.dp.toPx()) * 2),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                val count = bars.size.coerceAtLeast(1)
+                bars.forEachIndexed { i, raw ->
+                    val a = (i * 360f / count - 90f) * Math.PI.toFloat() / 180f
+                    val level = if (playing) raw.coerceIn(0.035f, 1f) else 0.035f
+                    val inner = base + 10.dp.toPx()
+                    val outer = inner + 7.dp.toPx() + level * 35.dp.toPx()
+                    val p1 = androidx.compose.ui.geometry.Offset(c.x + kotlin.math.cos(a) * inner, c.y + kotlin.math.sin(a) * inner)
+                    val p2 = androidx.compose.ui.geometry.Offset(c.x + kotlin.math.cos(a) * outer, c.y + kotlin.math.sin(a) * outer)
+                    drawLine(Brush.linearGradient(listOf(accent2, accent3)), p1, p2,
+                        if (i % 3 == 0) 3.2.dp.toPx() else 2.2.dp.toPx(), cap = StrokeCap.Round)
+                }
+                drawCircle(accent2.copy(alpha = 0.16f), base - 2.dp.toPx(), c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+            }
+            Box(Modifier.size(210.dp).graphicsLayer {
+                scaleX = if (playing) breathe else 1f; scaleY = if (playing) breathe else 1f
+                shadowElevation = 26.dp.toPx(); shape = CircleShape; clip = true
+            }.background(Ink2, CircleShape).padding(5.dp)) {
+                Art(track, 200.dp, 640, 100.dp)
+            }
+            Box(Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 14.dp)
+                .clip(CircleShape).background(Ink2.copy(alpha = 0.88f))
+                .border(1.dp, accent2.copy(alpha = 0.45f), CircleShape).padding(horizontal = 11.dp, vertical = 7.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(6.dp).background(if (playing) accent3 else Mute, CircleShape))
+                    Text(if (playing) "LIVE AUDIO" else "PAUSED", color = Cream, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                 }
             }
-            Art(track, 210.dp, 420, 105.dp)
         }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth().height(34.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            bars.take(32).forEach { level ->
-                Box(Modifier.padding(horizontal = 2.dp).width(4.dp).height((5f + level * 29f).dp).clip(CircleShape).background(Gold.copy(alpha = 0.85f)))
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            bars.forEach { value ->
+                Box(Modifier.padding(horizontal = 1.5.dp).width(3.dp)
+                    .height((if (playing) 5f + value.coerceIn(0f, 1f) * 35f else 5f).dp)
+                    .clip(CircleShape).background(Brush.verticalGradient(listOf(accent3, accent2.copy(alpha = 0.75f)))))
             }
         }
+        Text(if (playing) "SOUND • IN MOTION" else "PLAY TO ACTIVATE THE VISUALIZER",
+            color = Mute, fontSize = 9.sp, letterSpacing = 2.sp, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -144,9 +183,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         Store.init(this); favs = Store.favs; pls = Store.playlists(); selectedTheme = Store.theme; appearance = Store.appearance
-        perm = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
-        else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        rq = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { scan() }
+        perm = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.RECORD_AUDIO)
+        else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.RECORD_AUDIO)
+        rq = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            scan()
+            if (result[Manifest.permission.RECORD_AUDIO] == true) PlayerService.refreshVisualizer()
+        }
         scan()
         val need = perm.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (need.isNotEmpty()) rq.launch(need.toTypedArray())
@@ -550,34 +592,66 @@ class MainActivity : ComponentActivity() {
         val lines = remember(t.id, ly) { Lyrics.load(t) }
         val d = (ctl?.duration ?: 0L).coerceAtLeast(1L)
         val fav = t.id in favs
-        Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink2, Ink))).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                IconButton(close) { Icon(Icons.Rounded.ExpandMore, null, tint = Cream) }
-                Text("Hozir ijroda", color = Mute)
-                TextButton({ ly = !ly }) { Text(if (ly) "Rasm" else "Matn", color = Gold) }
+        val aqua = Store.theme == "aqua"
+        val accent = if (aqua) Color(0xFF42E6E0) else Color(0xFFFF5BC8)
+        val accent2 = if (aqua) Color(0xFF168DA5) else Color(0xFF8750FF)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(
+            if (aqua) Color(0xFF06232D) else Color(0xFF170D2C), Ink,
+            if (aqua) Color(0xFF031218) else Color(0xFF0B0714))))) {
+            Canvas(Modifier.fillMaxSize()) {
+                val c = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.34f)
+                drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = 0.13f), Color.Transparent), c, size.minDimension * 0.7f),
+                    size.minDimension * 0.7f, c)
             }
-            if (!ly) {
-                Spacer(Modifier.weight(0.25f))
-                AudioVisualizer(t, playing)
-                Spacer(Modifier.weight(0.2f))
-            } else LyricsView(lines, pos, Modifier.weight(1f).fillMaxWidth())
-            Text(t.title, fontFamily = FontFamily.Serif, fontSize = 24.sp, color = Cream, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
-            Text(t.artist, color = Gold, maxLines = 1)
-            Slider(pos.toFloat().coerceAtMost(d.toFloat()), { pos = it.toLong(); ctl?.seekTo(it.toLong()) }, valueRange = 0f..d.toFloat())
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) { Text(fmt(pos), color = Mute, fontSize = 12.sp); Text(fmt(d), color = Mute, fontSize = 12.sp) }
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                IconButton({ ctl?.shuffleModeEnabled = !shuffle }) { Icon(Icons.Rounded.Shuffle, null, tint = if (shuffle) Gold else Mute) }
-                IconButton({ ctl?.seekToPrevious() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Cream, modifier = Modifier.size(36.dp)) }
-                Box(Modifier.size(68.dp).clip(CircleShape).background(Gold).clickable { if (playing) ctl?.pause() else ctl?.play() }, contentAlignment = Alignment.Center) {
-                    Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Ink, modifier = Modifier.size(40.dp))
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 22.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(close) { Icon(Icons.Rounded.KeyboardArrowDown, null, tint = Cream, modifier = Modifier.size(32.dp)) }
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("NOW PLAYING", color = Mute, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.4.sp)
+                        Text(if (aqua) "A Q U A" else "N E O N   P U L S E", color = accent, fontSize = 10.sp, letterSpacing = 1.4.sp)
+                    }
+                    IconButton({ ly = !ly }) { Icon(if (ly) Icons.Rounded.Album else Icons.Rounded.Lyrics, null, tint = if (ly) accent else Cream) }
                 }
-                IconButton({ ctl?.seekToNext() }) { Icon(Icons.Rounded.SkipNext, null, tint = Cream, modifier = Modifier.size(36.dp)) }
-                IconButton({ ctl?.repeatMode = when (rep) { 0 -> 2; 2 -> 1; else -> 0 } }) {
-                    Icon(if (rep == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null, tint = if (rep != 0) Gold else Mute)
+                if (!ly) {
+                    Spacer(Modifier.weight(0.12f))
+                    AudioVisualizer(t, playing)
+                    Spacer(Modifier.weight(0.12f))
+                } else LyricsView(lines, pos, Modifier.weight(1f).fillMaxWidth())
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(t.title, fontFamily = FontFamily.Serif, fontSize = 25.sp, color = Cream, maxLines = 2,
+                        textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(5.dp))
+                    Text(t.artist, color = accent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(18.dp))
+                    Slider(pos.toFloat().coerceIn(0f, d.toFloat()), { pos = it.toLong(); ctl?.seekTo(it.toLong()) },
+                        valueRange = 0f..d.toFloat(), colors = SliderDefaults.colors(thumbColor = accent,
+                            activeTrackColor = accent, inactiveTrackColor = Cream.copy(alpha = 0.16f)))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(fmt(pos), color = Mute, fontSize = 11.sp); Text(fmt(d), color = Mute, fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton({ ctl?.shuffleModeEnabled = !shuffle }) { Icon(Icons.Rounded.Shuffle, null, tint = if (shuffle) accent else Mute, modifier = Modifier.size(23.dp)) }
+                        IconButton({ ctl?.seekToPrevious() }) { Icon(Icons.Rounded.SkipPrevious, null, tint = Cream, modifier = Modifier.size(36.dp)) }
+                        Box(Modifier.size(76.dp).background(Brush.linearGradient(listOf(accent, accent2)), CircleShape)
+                            .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape)
+                            .clickable { if (playing) ctl?.pause() else ctl?.play() }, contentAlignment = Alignment.Center) {
+                            Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(42.dp))
+                        }
+                        IconButton({ ctl?.seekToNext() }) { Icon(Icons.Rounded.SkipNext, null, tint = Cream, modifier = Modifier.size(36.dp)) }
+                        IconButton({ ctl?.repeatMode = when (rep) { 0 -> 2; 2 -> 1; else -> 0 } }) {
+                            Icon(if (rep == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null, tint = if (rep != 0) accent else Mute, modifier = Modifier.size(23.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton({ favs = if (fav) favs - t.id else favs + t.id; Store.favs = favs }) {
+                            Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (fav) accent else Mute)
+                        }
+                        Text(if (fav) "SAVED TO FAVOURITES" else "ADD TO FAVOURITES", color = Mute, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                    }
                 }
-            }
-            IconButton({ favs = if (fav) favs - t.id else favs + t.id; Store.favs = favs }) {
-                Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = if (fav) Gold else Mute)
             }
         }
     }
