@@ -32,6 +32,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -611,7 +612,7 @@ class MainActivity : ComponentActivity() {
                         Text("NOW PLAYING", color = Mute, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.4.sp)
                         Text(if (aqua) "A Q U A" else "N E O N   P U L S E", color = accent, fontSize = 10.sp, letterSpacing = 1.4.sp)
                     }
-                    IconButton({ ly = !ly }) { Icon(if (ly) Icons.Rounded.Album else Icons.Rounded.Lyrics, null, tint = if (ly) accent else Cream) }
+                    IconButton({ ly = !ly }) { Icon(if (ly) Icons.Rounded.Album else Icons.Rounded.MusicNote, null, tint = if (ly) accent else Cream) }
                 }
                 if (!ly) {
                     Spacer(Modifier.weight(0.12f))
