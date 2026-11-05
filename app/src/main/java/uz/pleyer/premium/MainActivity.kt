@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.*
