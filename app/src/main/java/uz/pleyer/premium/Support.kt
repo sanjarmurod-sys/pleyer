@@ -21,6 +21,13 @@ object Store {
     var favs: Set<Long>
         get() = sp.getStringSet("favs", emptySet())!!.map { it.toLong() }.toSet()
         set(v) { sp.edit().putStringSet("favs", v.map { it.toString() }.toSet()).apply() }
+    var theme: String
+        get() = sp.getString("theme", "neon") ?: "neon"
+        set(v) { sp.edit().putString("theme", v).apply() }
+    var appearance: String
+        get() = sp.getString("appearance", "system") ?: "system"
+        set(v) { sp.edit().putString("appearance", v).apply() }
+
     var minSec: Int
         get() = sp.getInt("min", 0)
         set(v) { sp.edit().putInt("min", v).apply() }
