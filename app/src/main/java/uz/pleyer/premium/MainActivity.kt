@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.*
@@ -43,11 +44,11 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import kotlinx.coroutines.*
 
-val Ink = Color(0xFF0B0B0F)
-val Ink2 = Color(0xFF16161D)
-val Gold = Color(0xFFD8B878)
-val Cream = Color(0xFFF1EBDD)
-val Mute = Color(0xFF8E8A82)
+var Ink by mutableStateOf(Color(0xFF0B0B0F))
+var Ink2 by mutableStateOf(Color(0xFF16161D))
+var Gold by mutableStateOf(Color(0xFFD8B878))
+var Cream by mutableStateOf(Color(0xFFF1EBDD))
+var Mute by mutableStateOf(Color(0xFF8E8A82))
 const val FAV = "Sevimlilar"
 
 fun fmt(ms: Long): String = "%d:%02d".format(ms / 60000, ms / 1000 % 60)
@@ -154,7 +155,31 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun App() {
-        MaterialTheme(colorScheme = darkColorScheme(primary = Gold, onPrimary = Ink, secondary = Gold, background = Ink, surface = Ink2,
+        var selectedTheme by remember { mutableStateOf(Store.theme) }
+        var appearance by remember { mutableStateOf(Store.appearance) }
+        val systemDark = isSystemInDarkTheme()
+        val dark = when (appearance) { "light" -> false; "dark" -> true; else -> systemDark }
+        SideEffect {
+            when (selectedTheme) {
+                "aqua" -> {
+                    Ink = if (dark) Color(0xFF06171D) else Color(0xFFF0FBFC)
+                    Ink2 = if (dark) Color(0xFF0D2932) else Color(0xFFDDF4F5)
+                    Gold = if (dark) Color(0xFF42E6E0) else Color(0xFF087F89)
+                    Cream = if (dark) Color(0xFFE4FAFA) else Color(0xFF12343A)
+                    Mute = if (dark) Color(0xFF83AEB2) else Color(0xFF5D858A)
+                }
+                else -> {
+                    Ink = if (dark) Color(0xFF100B1C) else Color(0xFFF8F3FF)
+                    Ink2 = if (dark) Color(0xFF211632) else Color(0xFFEDE2FA)
+                    Gold = if (dark) Color(0xFFFF5BC8) else Color(0xFF8C39B8)
+                    Cream = if (dark) Color(0xFFF8EFFF) else Color(0xFF281638)
+                    Mute = if (dark) Color(0xFFB69CC7) else Color(0xFF806B91)
+                }
+            }
+        }
+        MaterialTheme(colorScheme = if (dark) darkColorScheme(primary = Gold, onPrimary = Ink, secondary = Gold, background = Ink, surface = Ink2,
+            onBackground = Cream, onSurface = Cream, surfaceVariant = Ink2, onSurfaceVariant = Mute)
+            else lightColorScheme(primary = Gold, onPrimary = Color.White, secondary = Gold, background = Ink, surface = Ink2,
             onBackground = Cream, onSurface = Cream, surfaceVariant = Ink2, onSurfaceVariant = Mute)) {
             var tab by remember { mutableIntStateOf(0) }
             var full by remember { mutableStateOf(false) }
@@ -173,7 +198,7 @@ class MainActivity : ComponentActivity() {
                     if (cur != null) Mini(cur) { full = true }
                     NavigationBar(containerColor = Ink2) {
                         listOf("Qo'shiqlar" to Icons.Rounded.MusicNote, "Albom" to Icons.Rounded.Album,
-                            "Pleylist" to Icons.Rounded.QueueMusic, "Asboblar" to Icons.Rounded.Tune).forEachIndexed { i, p ->
+                            "Pleylist" to Icons.Rounded.QueueMusic, "Sozlamalar" to Icons.Rounded.Tune).forEachIndexed { i, p ->
                             NavigationBarItem(tab == i, { tab = i }, { Icon(p.second, null) }, label = { Text(p.first, fontSize = 11.sp) },
                                 colors = NavigationBarItemDefaults.colors(selectedIconColor = Ink, selectedTextColor = Gold,
                                     indicatorColor = Gold, unselectedIconColor = Mute, unselectedTextColor = Mute))
@@ -371,7 +396,21 @@ class MainActivity : ComponentActivity() {
         val v = Fx.ver
         val e = Fx.eq
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            Header("Asboblar", "Mediatekada ${tracks.size} ta trek, yashirilgan: ${Library.hidden}")
+            Header("Sozlamalar", "Neon Pulse • Aqua")
+            Sec("Interfeys mavzusi")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selectedTheme == "neon", { selectedTheme = "neon"; Store.theme = "neon" }, { Text("Neon Pulse") })
+                FilterChip(selectedTheme == "aqua", { selectedTheme = "aqua"; Store.theme = "aqua" }, { Text("Aqua") })
+            }
+            Sec("Ko'rinish rejimi")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("system" to "Avtomatik", "light" to "Kunduzgi", "dark" to "Tungi").forEach { (key, label) ->
+                    FilterChip(appearance == key, { appearance = key; Store.appearance = key }, { Text(label) })
+                }
+            }
+            Text("Avtomatik rejim telefoningizning kunduzgi/tungi sozlamasiga moslashadi.", color = Mute, fontSize = 12.sp)
+            Sec("Mediateka")
+            Text("Mediatekada ${tracks.size} ta trek • yashirilgan: ${Library.hidden}", color = Mute, fontSize = 12.sp)
             Sec("Ijro tezligi: " + "%.2f".format(sp) + "x")
             Slider(sp, { sp = it; ctl?.setPlaybackSpeed(it) }, valueRange = 0.5f..2f)
 
