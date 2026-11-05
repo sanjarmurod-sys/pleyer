@@ -44,5 +44,8 @@ class PlayerService : MediaSessionService() {
         super.onDestroy()
     }
 
-    companion object { var player: Player? = null }
+    companion object {
+        var player: Player? = null
+        fun refreshVisualizer() { (player as? ExoPlayer)?.let { AudioViz.attach(it.audioSessionId) } }
+    }
 }
