@@ -23,9 +23,10 @@ class PlayerService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         p.addListener(object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) { Fx.attach(audioSessionId) }
+            override fun onAudioSessionIdChanged(audioSessionId: Int) { Fx.attach(audioSessionId); AudioViz.attach(audioSessionId) }
         })
         Fx.attach(p.audioSessionId)
+        AudioViz.attach(p.audioSessionId)
         player = p
         session = MediaSession.Builder(this, p).build()
     }
@@ -39,7 +40,7 @@ class PlayerService : MediaSessionService() {
 
     override fun onDestroy() {
         session?.run { player.release(); release() }
-        session = null; player = null; Fx.release()
+        session = null; player = null; Fx.release(); AudioViz.release()
         super.onDestroy()
     }
 
