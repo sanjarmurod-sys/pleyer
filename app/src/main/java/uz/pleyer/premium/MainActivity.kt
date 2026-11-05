@@ -107,6 +107,8 @@ class MainActivity : ComponentActivity() {
     private var rep by mutableIntStateOf(0)
     private var favs by mutableStateOf<Set<Long>>(emptySet())
     private var pls by mutableStateOf<Map<String, List<Long>>>(emptyMap())
+    private var selectedTheme by mutableStateOf("neon")
+    private var appearance by mutableStateOf("system")
     private lateinit var rq: ActivityResultLauncher<Array<String>>
     private lateinit var perm: Array<String>
 
@@ -141,7 +143,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        Store.init(this); favs = Store.favs; pls = Store.playlists()
+        Store.init(this); favs = Store.favs; pls = Store.playlists(); selectedTheme = Store.theme; appearance = Store.appearance
         perm = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
         else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         rq = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { scan() }
@@ -186,8 +188,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun App() {
-        var selectedTheme by remember { mutableStateOf(Store.theme) }
-        var appearance by remember { mutableStateOf(Store.appearance) }
         val systemDark = isSystemInDarkTheme()
         val dark = when (appearance) { "light" -> false; "dark" -> true; else -> systemDark }
         SideEffect {
