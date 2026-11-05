@@ -90,7 +90,7 @@ object Library {
             columns.toTypedArray(),
             null,
             null,
-            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
+            "${MediaStore.Audio.Media.DATE_ADDED} DESC, ${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
