@@ -68,6 +68,35 @@ fun Art(t: Track?, size: Dp, px: Int, round: Dp = 10.dp) {
     }
 }
 
+@Composable
+fun AudioVisualizer(track: Track, playing: Boolean) {
+    val bars = AudioViz.levels
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(300.dp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                val base = size.minDimension * 0.34f
+                drawCircle(color = Gold.copy(alpha = 0.14f), radius = base + 28.dp.toPx(), center = center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()))
+                bars.forEachIndexed { index, value ->
+                    val angle = (index * 360f / bars.size - 90f) * Math.PI.toFloat() / 180f
+                    val amp = if (playing) value else 0.04f
+                    val outer = base + 12.dp.toPx() + amp * 34.dp.toPx()
+                    val start = androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle) * (base + 7.dp.toPx()), center.y + kotlin.math.sin(angle) * (base + 7.dp.toPx()))
+                    val end = androidx.compose.ui.geometry.Offset(center.x + kotlin.math.cos(angle) * outer, center.y + kotlin.math.sin(angle) * outer)
+                    drawLine(Gold.copy(alpha = 0.45f + amp * 0.55f), start, end, strokeWidth = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                }
+            }
+            Art(track, 210.dp, 420, 105.dp)
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth().height(34.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            bars.take(32).forEach { level ->
+                Box(Modifier.padding(horizontal = 2.dp).width(4.dp).height((5f + level * 29f).dp).clip(CircleShape).background(Gold.copy(alpha = 0.85f)))
+            }
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private var ctl by mutableStateOf<MediaController?>(null)
     private var tracks by mutableStateOf<List<Track>>(emptyList())
@@ -122,6 +151,8 @@ class MainActivity : ComponentActivity() {
         connect()
         setContent { App() }
     }
+
+    override fun onResume() { super.onResume(); if (::perm.isInitialized) scan() }
 
     private fun scan() {
         if (checkSelfPermission(perm[0]) != PackageManager.PERMISSION_GRANTED) return
@@ -526,7 +557,9 @@ class MainActivity : ComponentActivity() {
                 TextButton({ ly = !ly }) { Text(if (ly) "Rasm" else "Matn", color = Gold) }
             }
             if (!ly) {
-                Spacer(Modifier.weight(0.4f)); Art(t, 300.dp, 600, 24.dp); Spacer(Modifier.weight(0.6f))
+                Spacer(Modifier.weight(0.25f))
+                AudioVisualizer(t, playing)
+                Spacer(Modifier.weight(0.2f))
             } else LyricsView(lines, pos, Modifier.weight(1f).fillMaxWidth())
             Text(t.title, fontFamily = FontFamily.Serif, fontSize = 24.sp, color = Cream, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
             Text(t.artist, color = Gold, maxLines = 1)
